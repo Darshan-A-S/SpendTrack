@@ -9,6 +9,7 @@ export interface Expense {
   payment_method: string | null;
   date: string;
   recurring_id: string | null;
+  pot_id?: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -87,6 +88,7 @@ export async function getExpenses(
       e.payment_method,
       e.date,
       e.recurring_id,
+      e.pot_id,
       e.created_at,
       e.updated_at,
       c.name AS category_name,
@@ -115,6 +117,7 @@ export async function getExpenseById(
       e.payment_method,
       e.date,
       e.recurring_id,
+      e.pot_id,
       e.created_at,
       e.updated_at,
       c.name AS category_name,
@@ -135,8 +138,8 @@ export async function insertExpense(
 ): Promise<Expense> {
   const now = Date.now();
   await db.runAsync(
-    `INSERT INTO expenses (id, amount_paise, category_id, note, payment_method, date, recurring_id, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+    `INSERT INTO expenses (id, amount_paise, category_id, note, payment_method, date, recurring_id, pot_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
     [
       expense.id,
       expense.amount_paise,
@@ -145,6 +148,7 @@ export async function insertExpense(
       expense.payment_method || null,
       expense.date,
       expense.recurring_id || null,
+      expense.pot_id || null,
       now,
       now,
     ]
@@ -174,11 +178,13 @@ export async function updateExpense(
     expense.payment_method !== undefined ? expense.payment_method : existing.payment_method;
   const updatedDate = expense.date ?? existing.date;
   const updatedRecurringId =
-    expense.recurring_id !== undefined ? expense.recurring_id : existing.recurring_id;
+    expense.recurring_id !== undefined ? (expense.recurring_id || null) : (existing.recurring_id || null);
+  const updatedPotId =
+    expense.pot_id !== undefined ? (expense.pot_id || null) : (existing.pot_id || null);
 
   await db.runAsync(
     `UPDATE expenses
-     SET amount_paise = ?, category_id = ?, note = ?, payment_method = ?, date = ?, recurring_id = ?, updated_at = ?
+     SET amount_paise = ?, category_id = ?, note = ?, payment_method = ?, date = ?, recurring_id = ?, pot_id = ?, updated_at = ?
      WHERE id = ?;`,
     [
       updatedAmount,
@@ -187,6 +193,7 @@ export async function updateExpense(
       updatedPaymentMethod,
       updatedDate,
       updatedRecurringId,
+      updatedPotId,
       now,
       expense.id,
     ]
@@ -221,12 +228,14 @@ export async function getRecentNotes(
 /**
  * Returns total paise and count for a date range.
  * If excludeFuture is true, expenses dated after today are omitted.
+ * If excludePots is true, expenses linked to earmarked pots are omitted.
  */
 export async function getExpensesSummary(
   db: SQLiteDatabase,
   startDate: string,
   endDate: string,
-  excludeFuture: boolean = false
+  excludeFuture: boolean = false,
+  excludePots: boolean = false
 ): Promise<{ total_paise: number; count: number }> {
   let dateFilter = 'date >= ? AND date <= ?';
   const params: (string | number)[] = [startDate, endDate];
@@ -234,6 +243,10 @@ export async function getExpensesSummary(
   if (excludeFuture) {
     dateFilter += ' AND date <= ?';
     params.push(getTodayDateString());
+  }
+
+  if (excludePots) {
+    dateFilter += " AND (pot_id IS NULL OR pot_id = '') AND (note IS NULL OR note NOT LIKE '[%')";
   }
 
   const row = await db.getFirstAsync<{ total_paise: number | null; count: number }>(
@@ -293,16 +306,22 @@ export async function getExpensesByCategory(
 
 /**
  * Daily spending grouped by date.
+ * If excludePots is true, expenses linked to earmarked pots are omitted.
  */
 export async function getDailySpending(
   db: SQLiteDatabase,
   startDate: string,
-  endDate: string
+  endDate: string,
+  excludePots: boolean = false
 ): Promise<{ date: string; total_paise: number }[]> {
+  let where = 'date >= ? AND date <= ?';
+  if (excludePots) {
+    where += " AND (pot_id IS NULL OR pot_id = '') AND (note IS NULL OR note NOT LIKE '[%')";
+  }
   const query = `
     SELECT date, SUM(amount_paise) AS total_paise
     FROM expenses
-    WHERE date >= ? AND date <= ?
+    WHERE ${where}
     GROUP BY date
     ORDER BY date ASC;
   `;

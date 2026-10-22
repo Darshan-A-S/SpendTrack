@@ -99,6 +99,14 @@ export function formatCurrency(
 }
 
 /**
+ * Convenient shorthand to format paise without trailing .00 decimals.
+ * Example: formatPaise(500000, '₹') -> "₹5,000"
+ */
+export function formatPaise(paise: number, currencySymbol: string = '₹'): string {
+  return formatCurrency(paise, currencySymbol, 'en-IN', false);
+}
+
+/**
  * Sums an array of items by a paise property safely as integers.
  */
 export function sumPaise<T>(items: T[], getPaise: (item: T) => number): number {

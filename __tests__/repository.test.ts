@@ -93,8 +93,12 @@ function createMockDb(): SQLiteDatabase {
         };
       }
       if (q.includes('select sum(amount_paise) as total_paise, count(*) as count from expenses')) {
-        const total = tables.expenses.reduce((sum, e) => sum + e.amount_paise, 0);
-        return { total_paise: total, count: tables.expenses.length };
+        let exps = tables.expenses;
+        if (q.includes('pot_id is null')) {
+          exps = exps.filter((e) => !e.pot_id && (!e.note || !e.note.startsWith('[')));
+        }
+        const total = exps.reduce((sum, e) => sum + e.amount_paise, 0);
+        return { total_paise: total, count: exps.length };
       }
       if (q.includes('from budgets where category_id is null')) {
         return tables.budgets.find((b) => b.category_id === null) ?? null;
@@ -163,8 +167,9 @@ function createMockDb(): SQLiteDatabase {
           payment_method: params[4],
           date: params[5],
           recurring_id: params[6],
-          created_at: params[7],
-          updated_at: params[8],
+          pot_id: params[7],
+          created_at: params[8],
+          updated_at: params[9],
         });
       } else if (q.startsWith('delete from expenses')) {
         tables.expenses = tables.expenses.filter((e) => e.id !== params[0]);
@@ -259,6 +264,25 @@ describe('Repositories CRUD Layer', () => {
     expect(summary.total_paise).toBe(25000);
     expect(summary.count).toBe(1);
 
+    // Add an expense allocated to a pot
+    await insertExpense(db, {
+      id: 'exp_test_pot',
+      amount_paise: 750000,
+      category_id: 'cat_test_1',
+      note: '[Rent] PG fee',
+      payment_method: 'UPI',
+      date: '2026-04-15',
+      recurring_id: null,
+      pot_id: 'pot_rent',
+    });
+
+    const totalSummary = await getExpensesSummary(db, '2026-04-01', '2026-04-30');
+    expect(totalSummary.total_paise).toBe(775000);
+
+    const discretionarySummary = await getExpensesSummary(db, '2026-04-01', '2026-04-30', false, true);
+    expect(discretionarySummary.total_paise).toBe(25000);
+
+    await deleteExpense(db, 'exp_test_pot');
     await deleteExpense(db, 'exp_test_1');
   });
 

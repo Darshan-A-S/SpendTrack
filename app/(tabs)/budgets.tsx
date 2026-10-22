@@ -19,6 +19,8 @@ import { useThemeColor } from '../../hooks/useThemeColor';
 import { BudgetProgress } from '../../components/BudgetProgress';
 import { AmountInput } from '../../components/AmountInput';
 import { EmptyState } from '../../components/EmptyState';
+import { SalaryPotsManager } from '../../components/SalaryPotsManager';
+import { useSalaryStore } from '../../store/salaryStore';
 
 import { parseToPaise, paiseToRupeeString } from '../../utils/money';
 import { Spacing, Radii, Typography } from '../../constants/theme';
@@ -26,6 +28,7 @@ import { Strings } from '../../constants/strings';
 
 export default function BudgetsScreen() {
   const { colors } = useThemeColor();
+  const isSalaryMode = useSalaryStore((state) => state.isSalaryMode);
 
   const {
     overallBudgetProgress,
@@ -107,6 +110,9 @@ export default function BudgetsScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* Salary Mode: Monthly Income & Earmarked Pots */}
+        {isSalaryMode && <SalaryPotsManager />}
+
         {/* Overall Monthly Budget Section */}
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>

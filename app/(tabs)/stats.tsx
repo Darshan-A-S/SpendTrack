@@ -94,6 +94,8 @@ export default function StatsScreen() {
                 activeOpacity={0.7}
               >
                 <Text
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
                   style={[
                     styles.rangeChipText,
                     {
@@ -134,6 +136,11 @@ export default function StatsScreen() {
                 <Text style={[styles.cardValue, { color: colors.text }]}>
                   {formatCurrency(stats.totalPaise, currency)}
                 </Text>
+                {stats.hasPotExpenses && (
+                  <Text style={[styles.cardSubText, { color: colors.textSecondary }]}>
+                    {formatCurrency(stats.totalPaise - stats.discretionaryTotalPaise, currency)} from pots
+                  </Text>
+                )}
               </View>
 
               <View style={[styles.summaryCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -143,6 +150,11 @@ export default function StatsScreen() {
                 <Text style={[styles.cardValue, { color: colors.text }]}>
                   {formatCurrency(stats.dailyAveragePaise, currency)}
                 </Text>
+                {stats.hasPotExpenses && (
+                  <Text style={[styles.cardSubText, { color: colors.primary }]}>
+                    Excl. pot expenses
+                  </Text>
+                )}
               </View>
             </View>
 
@@ -318,10 +330,15 @@ const styles = StyleSheet.create({
     borderRadius: Radii.full,
     borderWidth: 1,
     minHeight: 38,
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'center',
+    flexShrink: 0,
   },
   rangeChipText: {
     ...Typography.bodySmall,
+    flexShrink: 0,
+    includeFontPadding: false,
   },
   scrollContent: {
     paddingBottom: 40,
@@ -347,6 +364,11 @@ const styles = StyleSheet.create({
   cardValue: {
     ...Typography.amountLarge,
     fontWeight: '800',
+  },
+  cardSubText: {
+    fontSize: 11,
+    marginTop: 4,
+    fontWeight: '500',
   },
   comparisonCard: {
     flexDirection: 'row',

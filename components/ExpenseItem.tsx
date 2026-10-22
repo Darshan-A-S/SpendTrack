@@ -118,6 +118,17 @@ export const ExpenseItem: React.FC<ExpenseItemProps> = ({
               </View>
             )}
 
+            {(item.pot_id || item.note?.startsWith('[')) && (
+              <View style={[styles.tag, { backgroundColor: '#8B5CF620' }]}>
+                <Ionicons name="wallet-outline" size={11} color="#8B5CF6" />
+                <Text style={[styles.tagText, { color: '#8B5CF6', fontWeight: '700', marginLeft: 2 }]}>
+                  {item.note?.startsWith('[')
+                    ? item.note.split(']')[0].replace('[', '')
+                    : 'Pot'}
+                </Text>
+              </View>
+            )}
+
             {item.recurring_id && (
               <View style={[styles.tag, { backgroundColor: `${colors.primary}20` }]}>
                 <Ionicons name="repeat-outline" size={12} color={colors.primary} />

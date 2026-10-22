@@ -13,23 +13,21 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { subMonths, addMonths } from 'date-fns';
 
 import { useExpenses } from '../../hooks/useExpenses';
 import { useCategories } from '../../hooks/useCategories';
-import { useBudgets } from '../../hooks/useBudgets';
 import { useThemeColor } from '../../hooks/useThemeColor';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useDataStore } from '../../store/dataStore';
 
-import { MonthSwitcher } from '../../components/MonthSwitcher';
 import { DaySectionHeader } from '../../components/DaySectionHeader';
 import { ExpenseItem } from '../../components/ExpenseItem';
-import { BudgetProgress } from '../../components/BudgetProgress';
 import { EmptyState } from '../../components/EmptyState';
 import { Snackbar } from '../../components/Snackbar';
+import { DailySpendHeader } from '../../components/DailySpendHeader';
+import { useSalaryStore } from '../../store/salaryStore';
 
-import { getMonthCycleRange } from '../../utils/dates';
+import { getMonthCycleRange, getTodayDateString } from '../../utils/dates';
 import { Spacing, Radii, Typography } from '../../constants/theme';
 import { Strings } from '../../constants/strings';
 
@@ -84,20 +82,23 @@ export default function HomeScreen() {
   } = useExpenses(filterOptions);
 
   const { categories } = useCategories(false);
-  const { overallBudgetProgress } = useBudgets();
+  const isSalaryMode = useSalaryStore((state) => state.isSalaryMode);
+
+  // Today's discretionary spending (excluding expenses paid out of earmarked pots)
+  const todayStr = useMemo(() => getTodayDateString(), []);
+  const todaySpentPaise = useMemo(() => {
+    const todayGroup = dayGroups.find((g) => g.date === todayStr);
+    if (!todayGroup) return 0;
+
+    return todayGroup.data
+      .filter((exp) => !exp.pot_id && !exp.note?.startsWith('['))
+      .reduce((sum, exp) => sum + exp.amount_paise, 0);
+  }, [dayGroups, todayStr]);
 
   const activeFiltersCount =
     (selectedCategoryIds.length > 0 ? 1 : 0) +
     (selectedPaymentMethods.length > 0 ? 1 : 0) +
     (minAmount || maxAmount ? 1 : 0);
-
-  const handlePrevMonth = () => {
-    setCurrentDate((d) => subMonths(d, 1));
-  };
-
-  const handleNextMonth = () => {
-    setCurrentDate((d) => addMonths(d, 1));
-  };
 
   const handleUndo = async () => {
     if (undoExpense) {
@@ -178,25 +179,7 @@ export default function HomeScreen() {
           />
         )}
         ListHeaderComponent={
-          <View>
-            {/* Month Switcher & Total */}
-            <MonthSwitcher
-              monthDisplay={cycle.label}
-              totalSpentPaise={totalSpentPaise}
-              onPreviousMonth={handlePrevMonth}
-              onNextMonth={handleNextMonth}
-            />
-
-            {/* Overall Monthly Budget Card (if configured) */}
-            {overallBudgetProgress ? (
-              <View style={{ marginHorizontal: Spacing.md, marginTop: Spacing.xs }}>
-                <BudgetProgress
-                  item={overallBudgetProgress}
-                  onPress={() => router.push('/(tabs)/budgets')}
-                />
-              </View>
-            ) : null}
-          </View>
+          isSalaryMode ? <DailySpendHeader todaySpentPaise={todaySpentPaise} /> : null
         }
         ListEmptyComponent={
           <EmptyState
@@ -226,21 +209,24 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
       />
 
-      {/* Floating Add Expense Button */}
-      <TouchableOpacity
-        style={[styles.fab, { backgroundColor: colors.primary }]}
-        onPress={() => {
-          try {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          } catch {}
-          router.push('/add-expense');
-        }}
-        activeOpacity={0.8}
-        accessibilityRole="button"
-        accessibilityLabel={Strings.expenseForm.titleAdd}
-      >
-        <Ionicons name="add" size={32} color="#FFFFFF" />
-      </TouchableOpacity>
+      {/* Bottom Rectangular Add Expense Button */}
+      <View style={[styles.bottomButtonContainer, { backgroundColor: colors.background }]}>
+        <TouchableOpacity
+          style={[styles.bottomAddButton, { backgroundColor: colors.primary }]}
+          onPress={() => {
+            try {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            } catch {}
+            router.push('/add-expense');
+          }}
+          activeOpacity={0.85}
+          accessibilityRole="button"
+          accessibilityLabel={Strings.expenseForm.titleAdd}
+        >
+          <Ionicons name="add-circle" size={22} color="#FFFFFF" />
+          <Text style={styles.bottomAddButtonText}>Add Expense</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Undo Delete Snackbar */}
       <Snackbar
@@ -437,22 +423,31 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   listContent: {
-    paddingBottom: 90,
+    paddingBottom: 24,
   },
-  fab: {
-    position: 'absolute',
-    bottom: 24,
-    right: 20,
-    width: 58,
-    height: 58,
-    borderRadius: Radii.full,
+  bottomButtonContainer: {
+    paddingHorizontal: Spacing.md,
+    paddingTop: Spacing.xs,
+    paddingBottom: Spacing.sm,
+  },
+  bottomAddButton: {
+    minHeight: 50,
+    borderRadius: Radii.md,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 6,
+    gap: Spacing.xs,
+    elevation: 4,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  bottomAddButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   modalOverlay: {
     flex: 1,

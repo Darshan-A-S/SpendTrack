@@ -38,3 +38,12 @@ export async function closeDatabase(): Promise<void> {
     dbInstance = null;
   }
 }
+
+export async function resetAllData(): Promise<void> {
+  const db = await getDb();
+  await db.execAsync(`
+    DELETE FROM expenses;
+    DELETE FROM budgets;
+    DELETE FROM recurring_rules;
+  `);
+}

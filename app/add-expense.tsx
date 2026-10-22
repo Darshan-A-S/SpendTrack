@@ -31,8 +31,9 @@ import { useDataStore } from '../store/dataStore';
 import { AmountInput } from '../components/AmountInput';
 import { CategoryPicker } from '../components/CategoryPicker';
 
-import { parseToPaise, paiseToRupeeString } from '../utils/money';
+import { parseToPaise, paiseToRupeeString, formatPaise } from '../utils/money';
 import { getTodayDateString } from '../utils/dates';
+import { useSalaryStore } from '../store/salaryStore';
 import { Spacing, Radii, Typography } from '../constants/theme';
 import { Strings } from '../constants/strings';
 
@@ -57,6 +58,12 @@ export default function AddExpenseScreen() {
   const lastUsedPaymentMethod = useSettingsStore((state) => state.lastUsedPaymentMethod);
   const setLastUsedCategory = useSettingsStore((state) => state.setLastUsedCategory);
   const setLastUsedPaymentMethod = useSettingsStore((state) => state.setLastUsedPaymentMethod);
+  const currency = useSettingsStore((state) => state.currency);
+
+  const isSalaryMode = useSalaryStore((state) => state.isSalaryMode);
+  const pots = useSalaryStore((state) => state.pots);
+  const spendFromPot = useSalaryStore((state) => state.spendFromPot);
+  const refundToPot = useSalaryStore((state) => state.refundToPot);
 
   const { categories } = useCategories(false);
 
@@ -66,6 +73,11 @@ export default function AddExpenseScreen() {
   const [date, setDate] = useState(() => getTodayDateString());
   const [note, setNote] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<string | null>(null);
+  const [selectedPotId, setSelectedPotId] = useState<string | null>(null);
+
+  // Track initial pot & amount when editing to properly balance pots on changes
+  const [initialPotId, setInitialPotId] = useState<string | null>(null);
+  const [initialAmountPaise, setInitialAmountPaise] = useState<number>(0);
 
   // Errors
   const [amountError, setAmountError] = useState<string | undefined>();
@@ -88,8 +100,32 @@ export default function AddExpenseScreen() {
           setAmountStr(paiseToRupeeString(item.amount_paise));
           setSelectedCategoryId(item.category_id);
           setDate(item.date);
-          setNote(item.note || '');
           setPaymentMethod(item.payment_method);
+
+          // Detect Pot:
+          // 1. By pot_id if stored
+          // 2. Or by parsing [PotName] in note
+          let detectedPotId: string | null = item.pot_id || null;
+          let cleanNote = item.note || '';
+
+          if (cleanNote.startsWith('[')) {
+            const match = /^\[([^\]]+)\]\s*(.*)$/.exec(cleanNote);
+            if (match) {
+              const potName = match[1];
+              const matchingPot = pots.find(
+                (p) => p.name.toLowerCase() === potName.toLowerCase() || p.id === detectedPotId
+              );
+              if (matchingPot) {
+                detectedPotId = matchingPot.id;
+                cleanNote = match[2];
+              }
+            }
+          }
+
+          setSelectedPotId(detectedPotId);
+          setInitialPotId(detectedPotId);
+          setInitialAmountPaise(item.amount_paise);
+          setNote(cleanNote);
         }
       } else {
         // Quick add: Pre-select last used category and payment method
@@ -155,14 +191,48 @@ export default function AddExpenseScreen() {
     try {
       const db = await getDb();
 
+      // Handle pot balance updates
+      let finalNote = note.trim();
+
+      if (isEditing) {
+        // If previously charged to a pot, refund the old amount
+        if (initialPotId) {
+          refundToPot(initialPotId, initialAmountPaise);
+        }
+        // If now charged to a pot, spend the new amount
+        if (selectedPotId) {
+          const pot = pots.find((p) => p.id === selectedPotId);
+          if (pot) {
+            spendFromPot(selectedPotId, paise);
+            const tag = `[${pot.name}]`;
+            if (!finalNote.includes(tag)) {
+              finalNote = finalNote ? `${tag} ${finalNote}` : tag;
+            }
+          }
+        }
+      } else {
+        // New expense
+        if (selectedPotId) {
+          const pot = pots.find((p) => p.id === selectedPotId);
+          if (pot) {
+            spendFromPot(selectedPotId, paise);
+            const tag = `[${pot.name}]`;
+            if (!finalNote.includes(tag)) {
+              finalNote = finalNote ? `${tag} ${finalNote}` : tag;
+            }
+          }
+        }
+      }
+
       if (isEditing && params.id) {
         await updateExpense(db, {
           id: params.id,
           amount_paise: paise,
           category_id: selectedCategoryId,
           date,
-          note: note.trim() || null,
+          note: finalNote || null,
           payment_method: paymentMethod,
+          pot_id: selectedPotId || null,
         });
       } else {
         const newId = Crypto.randomUUID();
@@ -171,9 +241,10 @@ export default function AddExpenseScreen() {
           amount_paise: paise,
           category_id: selectedCategoryId,
           date,
-          note: note.trim() || null,
+          note: finalNote || null,
           payment_method: paymentMethod,
           recurring_id: null,
+          pot_id: selectedPotId || null,
         });
 
         // Remember last used category and payment method
@@ -344,6 +415,67 @@ export default function AddExpenseScreen() {
               );
             })}
           </View>
+          {/* Salary Mode: Deduct From Earmarked Pot vs Daily Pool */}
+          {isSalaryMode && (
+            <View style={{ marginTop: Spacing.md }}>
+              <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>
+                Deduct From:
+              </Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexDirection: 'row' }}>
+                <TouchableOpacity
+                  style={[
+                    styles.pmChip,
+                    {
+                      backgroundColor: !selectedPotId ? `${colors.primary}20` : colors.card,
+                      borderColor: !selectedPotId ? colors.primary : colors.border,
+                      marginRight: 8,
+                    },
+                  ]}
+                  onPress={() => setSelectedPotId(null)}
+                >
+                  <Text
+                    style={[
+                      styles.pmText,
+                      { color: !selectedPotId ? colors.primary : colors.text, fontWeight: '700' },
+                    ]}
+                  >
+                    💳 Daily Spending Pool
+                  </Text>
+                </TouchableOpacity>
+
+                {pots.map((pot) => {
+                  const isSelected = selectedPotId === pot.id;
+                  const remaining = Math.max(0, pot.allocatedPaise - pot.spentPaise);
+                  return (
+                    <TouchableOpacity
+                      key={pot.id}
+                      style={[
+                        styles.pmChip,
+                        {
+                          backgroundColor: isSelected ? `${pot.color}25` : colors.card,
+                          borderColor: isSelected ? pot.color : colors.border,
+                          marginRight: 8,
+                        },
+                      ]}
+                      onPress={() => setSelectedPotId(isSelected ? null : pot.id)}
+                    >
+                      <Text
+                        style={[
+                          styles.pmText,
+                          {
+                            color: isSelected ? pot.color : colors.text,
+                            fontWeight: isSelected ? '700' : '500',
+                          },
+                        ]}
+                      >
+                        {pot.name} ({formatPaise(remaining, currency)})
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

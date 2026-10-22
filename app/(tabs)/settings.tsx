@@ -16,6 +16,9 @@ import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 
 import { useSettingsStore, AppTheme, WeekStartDay } from '../../store/settingsStore';
+import { useSalaryStore } from '../../store/salaryStore';
+import { useDataStore } from '../../store/dataStore';
+import { resetAllData } from '../../db/database';
 import { useThemeColor } from '../../hooks/useThemeColor';
 import {
   scheduleDailyReminder,
@@ -100,6 +103,37 @@ export default function SettingsScreen() {
       await cancelDailyReminder();
       setReminderEnabled(false);
     }
+  };
+
+  // Handle Reset All Data
+  const handleResetAllData = () => {
+    Alert.alert(
+      'Reset All Data?',
+      'This will permanently delete all expenses, reset pots, and clear your streak so you can start testing from scratch.\n\nAre you sure?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset Everything',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await resetAllData();
+              useSalaryStore.getState().resetToInitial();
+              useDataStore.getState().bumpDataVersion();
+              try {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              } catch {}
+              Alert.alert(
+                'Data Reset Complete! 🎉',
+                'All local data has been cleared and reset. You are ready to start testing from scratch!'
+              );
+            } catch (err: any) {
+              Alert.alert('Error', err.message || 'Could not reset data.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleSaveReminderTime = async () => {
@@ -342,6 +376,31 @@ export default function SettingsScreen() {
               trackColor={{ false: colors.cardAlt, true: colors.primary }}
             />
           </View>
+        </View>
+
+        {/* Section: Reset & Testing */}
+        <Text style={[styles.sectionTitle, { color: '#EF4444', marginTop: Spacing.xl }]}>
+          Reset & Testing
+        </Text>
+        <View style={[styles.card, { backgroundColor: colors.card, borderColor: '#EF4444' }]}>
+          <TouchableOpacity
+            style={styles.row}
+            onPress={handleResetAllData}
+            activeOpacity={0.7}
+          >
+            <View style={styles.rowLeft}>
+              <Ionicons name="trash-bin-outline" size={20} color="#EF4444" />
+              <View>
+                <Text style={[styles.rowLabel, { color: '#EF4444', fontWeight: '700' }]}>
+                  Reset All Data & Start Fresh
+                </Text>
+                <Text style={[styles.rowSub, { color: colors.textSecondary }]}>
+                  Delete all expenses, reset pots & streak
+                </Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#EF4444" />
+          </TouchableOpacity>
         </View>
 
         {/* Section: About & Privacy */}

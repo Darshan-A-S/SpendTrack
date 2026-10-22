@@ -8,6 +8,7 @@ import {
   ExpenseFilterOptions,
 } from '../db/repositories/expenseRepo';
 import { useDataStore } from '../store/dataStore';
+import { useSalaryStore } from '../store/salaryStore';
 import { getFriendlyDateLabel, getTodayDateString } from '../utils/dates';
 import * as Crypto from 'expo-crypto';
 
@@ -94,6 +95,22 @@ export function useExpenses(filters: ExpenseFilterOptions) {
   const deleteExpenseWithUndo = async (item: ExpenseWithCategory) => {
     const db = await getDb();
     await dbDeleteExpense(db, item.id);
+
+    // Refund pot if this was charged to an earmarked pot
+    let potId = item.pot_id;
+    if (!potId && item.note?.startsWith('[')) {
+      const match = /^\[([^\]]+)\]/.exec(item.note);
+      if (match) {
+        const found = useSalaryStore.getState().pots.find(
+          (p) => p.name.toLowerCase() === match[1].toLowerCase()
+        );
+        if (found) potId = found.id;
+      }
+    }
+    if (potId) {
+      useSalaryStore.getState().refundToPot(potId, item.amount_paise);
+    }
+
     setUndoExpense(item);
     bumpDataVersion();
   };
@@ -109,7 +126,24 @@ export function useExpenses(filters: ExpenseFilterOptions) {
       payment_method: item.payment_method,
       date: item.date,
       recurring_id: item.recurring_id,
+      pot_id: item.pot_id,
     });
+
+    // Re-charge pot if restored
+    let potId = item.pot_id;
+    if (!potId && item.note?.startsWith('[')) {
+      const match = /^\[([^\]]+)\]/.exec(item.note);
+      if (match) {
+        const found = useSalaryStore.getState().pots.find(
+          (p) => p.name.toLowerCase() === match[1].toLowerCase()
+        );
+        if (found) potId = found.id;
+      }
+    }
+    if (potId) {
+      useSalaryStore.getState().spendFromPot(potId, item.amount_paise);
+    }
+
     bumpDataVersion();
   };
 

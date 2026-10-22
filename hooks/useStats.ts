@@ -31,6 +31,8 @@ export interface CategoryBreakdownItem {
 
 export interface StatsData {
   totalPaise: number;
+  discretionaryTotalPaise: number;
+  hasPotExpenses: boolean;
   dailyAveragePaise: number;
   comparison: {
     prevTotalPaise: number;
@@ -58,6 +60,8 @@ export function useStats(
   );
   const [stats, setStats] = useState<StatsData>({
     totalPaise: 0,
+    discretionaryTotalPaise: 0,
+    hasPotExpenses: false,
     dailyAveragePaise: 0,
     comparison: {
       prevTotalPaise: 0,
@@ -89,12 +93,22 @@ export function useStats(
       const summary = await getExpensesSummary(db, range.startDate, range.endDate, true);
       const totalPaise = summary.total_paise;
 
-      // Calculate elapsed days for daily average
+      // Discretionary spending summary (excluding earmarked pot expenses)
+      const discretionarySummary = await getExpensesSummary(
+        db,
+        range.startDate,
+        range.endDate,
+        true,
+        true
+      );
+      const discretionaryTotalPaise = discretionarySummary.total_paise;
+
+      // Calculate elapsed days for daily average based on discretionary spending
       const start = parseDateString(range.startDate);
       const end = parseDateString(range.endDate);
       const effectiveEnd = range.endDate > todayStr ? parseDateString(todayStr) : end;
       const elapsedDays = Math.max(1, differenceInCalendarDays(effectiveEnd, start) + 1);
-      const dailyAveragePaise = Math.round(totalPaise / elapsedDays);
+      const dailyAveragePaise = Math.round(discretionaryTotalPaise / elapsedDays);
 
       // 2. Comparison with previous period
       // For 'this_month', compare with last month cycle
@@ -132,8 +146,8 @@ export function useStats(
         percentage: totalPaise > 0 ? Math.round((c.total_paise / totalPaise) * 100) : 0,
       }));
 
-      // 4. Daily spending trend for selected range
-      const rawDaily = await getDailySpending(db, range.startDate, range.endDate);
+      // 4. Daily spending trend for selected range (exclude earmarked pots)
+      const rawDaily = await getDailySpending(db, range.startDate, range.endDate, true);
       const dailyTrend = rawDaily.map((d) => ({
         date: d.date,
         dayLabel: d.date.substring(8), // day of month '01', '15'
@@ -177,6 +191,8 @@ export function useStats(
 
       setStats({
         totalPaise,
+        discretionaryTotalPaise,
+        hasPotExpenses: totalPaise > discretionaryTotalPaise,
         dailyAveragePaise,
         comparison,
         categoryBreakdown,
